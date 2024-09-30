@@ -1,19 +1,12 @@
 const socket = new WebSocket('ws://' + window.location.host + '/ws');
+let activeRooms = {};
 let currentRoom = '';
 
 socket.onopen = function(event) {
     console.log("WebSocket connection established");
 };
 
-socket.onmessage = function(event) {
-    console.log("Received message:", event.data);
-    const message = JSON.parse(event.data);
-    if (message.type === 'chat') {
-        displayMessage(message);
-    } else if (message.type === 'join' || message.type === 'leave') {
-        console.log(message.type + ' event for room: ' + message.room);
-    }
-};
+
 
 socket.onerror = function(error) {
     console.error("WebSocket error:", error);
@@ -24,6 +17,16 @@ socket.onclose = function(event) {
 };
 
 function displayMessage(message) {
+    if (!activeRooms[message.room]) {
+        activeRooms[message.room] = [];
+    }
+    activeRooms[message.room].push(message);
+    if (currentRoom === message.room) {
+        appendMessageToDOM(message);
+    }
+}
+
+function appendMessageToDOM(message) {
     const messageElement = document.createElement('div');
     messageElement.textContent = `${message.sender}: ${message.content}`;
     document.getElementById('message-container').appendChild(messageElement);
@@ -31,11 +34,11 @@ function displayMessage(message) {
 
 document.getElementById('send-btn').addEventListener('click', function() {
     const input = document.getElementById('message-input');
-    if (input.value.trim() === '') return;  // Don't send empty messages
+    if (input.value.trim() === '' || !currentRoom) return;
     const message = {
         type: 'chat',
         content: input.value,
-        sender: 'User', // In a real app, this would be the logged-in user's name
+        sender: 'User',
         timestamp: new Date(),
         room: currentRoom
     };
@@ -46,7 +49,7 @@ document.getElementById('send-btn').addEventListener('click', function() {
 
 document.getElementById('create-room-btn').addEventListener('click', function() {
     const roomName = document.getElementById('new-room-input').value;
-    if (roomName.trim() === '') return;  // Don't create rooms with empty names
+    if (roomName.trim() === '') return;
     fetch('/room/' + roomName, { method: 'POST' })
         .then(response => {
             if (response.ok) {
@@ -67,17 +70,28 @@ function addRoomToList(roomName) {
 
 function joinRoom(roomName) {
     console.log("Joining room:", roomName);
-    if (currentRoom) {
-        console.log("Leaving current room:", currentRoom);
-        socket.send(JSON.stringify({type: 'leave', room: currentRoom}));
+    if (currentRoom !== roomName) {
+        socket.send(JSON.stringify({type: 'join', room: roomName}));
+        currentRoom = roomName;
+        document.getElementById('room-name').textContent = 'Room: ' + roomName;
+        document.getElementById('message-container').innerHTML = '';
+        if (activeRooms[roomName]) {
+            activeRooms[roomName].forEach(appendMessageToDOM);
+        }
     }
-    currentRoom = roomName;
-    socket.send(JSON.stringify({type: 'join', room: roomName}));
-    document.getElementById('room-name').textContent = 'Room: ' + roomName;
-    document.getElementById('message-container').innerHTML = '';
 }
 
-// Fetch and display existing rooms when the page loads
+socket.onmessage = function(event) {
+    console.log("Received message:", event.data);
+    const message = JSON.parse(event.data);
+    if (message.type === 'chat') {
+        displayMessage(message);
+    } else if (message.type === 'join' || message.type === 'leave') {
+        console.log(message.type + ' event for room: ' + message.room);
+    }
+};
+
+
 fetch('/rooms')
     .then(response => response.json())
     .then(rooms => {

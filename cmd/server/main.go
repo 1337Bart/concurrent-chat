@@ -18,12 +18,10 @@ func main() {
 
 	s := server.NewServer(cfg)
 
-	// Serve static files
 	fs := http.FileServer(http.Dir("./web/static"))
 	s.Router().PathPrefix("/static/").Handler(http.StripPrefix("/static/", fs))
 	log.Println("Static file server set up")
 
-	// Serve index.html
 	s.Router().HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		log.Println("Serving index.html")
 		http.ServeFile(w, r, "./web/templates/index.html")

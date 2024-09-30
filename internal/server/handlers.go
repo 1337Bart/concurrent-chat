@@ -10,7 +10,7 @@ import (
 )
 
 func (s *Server) routes() {
-	s.router.HandleFunc("/ws", s.handleWebSocket) // Change this line
+	s.router.HandleFunc("/ws", s.handleWebSocket)
 	s.router.HandleFunc("/room/{roomID}", s.handleRoomCreation).Methods("POST")
 	s.router.HandleFunc("/rooms", s.handleListRooms).Methods("GET")
 }
