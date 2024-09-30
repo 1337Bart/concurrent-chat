@@ -20,6 +20,12 @@ type Server struct {
 	mu     sync.RWMutex
 }
 
+type ClientConnection struct {
+	conn   *websocket.Conn
+	rooms  map[string]*chat.Client
+	server *Server
+}
+
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
@@ -53,61 +59,43 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("WebSocket connection established")
 
-	// Handle the connection (you'll need to implement this)
 	go s.handleConnection(conn)
 }
-
 func (s *Server) handleConnection(conn *websocket.Conn) {
-	var currentRoom string
-	var currentClient *chat.Client
+	client := chat.NewClient(conn)
 
-	for {
-		_, p, err := conn.ReadMessage()
-		if err != nil {
-			log.Println(err)
-			if currentRoom != "" && currentClient != nil {
-				s.mu.RLock()
-				room, exists := s.rooms[currentRoom]
-				s.mu.RUnlock()
-				if exists {
-					room.Leave(currentClient)
-				}
-			}
+	client.HandleMessage = func(message []byte) {
+		var msg map[string]interface{}
+		if err := json.Unmarshal(message, &msg); err != nil {
+			log.Printf("Error unmarshaling message: %v", err)
 			return
 		}
-		var message map[string]interface{}
-		if err := json.Unmarshal(p, &message); err != nil {
-			log.Printf("Error unmarshaling message: %v", err)
-			continue
-		}
 
-		messageType, ok := message["type"].(string)
+		messageType, ok := msg["type"].(string)
 		if !ok {
 			log.Printf("Message type not found or not a string")
-			continue
+			return
 		}
 
 		switch messageType {
 		case "chat":
-			roomName, ok := message["room"].(string)
+			roomName, ok := msg["room"].(string)
 			if !ok {
 				log.Printf("Room not found in chat message")
-				continue
+				return
 			}
-			s.mu.RLock()
-			room, exists := s.rooms[roomName]
-			s.mu.RUnlock()
+			room, exists := client.Rooms[roomName]
 			if !exists {
-				log.Printf("Room %s does not exist", roomName)
-				continue
+				log.Printf("Client not in room %s", roomName)
+				return
 			}
-			log.Printf("Received message for broadcast in room %s: %s", roomName, string(p))
-			room.Broadcast(p)
+			log.Printf("Received message for broadcast in room %s: %s", roomName, string(message))
+			room.Broadcast(message)
 		case "join":
-			roomName, ok := message["room"].(string)
+			roomName, ok := msg["room"].(string)
 			if !ok {
 				log.Printf("Room not found in join message")
-				continue
+				return
 			}
 			s.mu.Lock()
 			room, exists := s.rooms[roomName]
@@ -117,33 +105,26 @@ func (s *Server) handleConnection(conn *websocket.Conn) {
 				go room.Run()
 			}
 			s.mu.Unlock()
-			if currentRoom != "" && currentClient != nil {
-				s.mu.RLock()
-				oldRoom, exists := s.rooms[currentRoom]
-				s.mu.RUnlock()
-				if exists {
-					oldRoom.Leave(currentClient)
-				}
-			}
-			currentRoom = roomName
-			currentClient = chat.NewClient(conn, room)
-			room.Join(currentClient)
-			go currentClient.WritePump()
+			client.Rooms[roomName] = room
+			room.Join(client)
 			log.Printf("Client joined room: %s", roomName)
 		case "leave":
-			if currentRoom != "" && currentClient != nil {
-				s.mu.RLock()
-				room, exists := s.rooms[currentRoom]
-				s.mu.RUnlock()
-				if exists {
-					room.Leave(currentClient)
-					log.Printf("Client left room: %s", currentRoom)
-				}
-				currentRoom = ""
-				currentClient = nil
+			roomName, ok := msg["room"].(string)
+			if !ok {
+				log.Printf("Room not found in leave message")
+				return
+			}
+			room, exists := client.Rooms[roomName]
+			if exists {
+				room.Leave(client)
+				delete(client.Rooms, roomName)
+				log.Printf("Client left room: %s", roomName)
 			}
 		default:
 			log.Printf("Unknown message type: %s", messageType)
 		}
 	}
+
+	go client.WritePump()
+	client.ReadPump() // this will block until the connection is closed
 }

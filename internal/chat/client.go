@@ -11,21 +11,26 @@ const (
 )
 
 type Client struct {
-	conn *websocket.Conn
-	room *Room
-	send chan []byte
+	conn          *websocket.Conn
+	Rooms         map[string]*Room
+	send          chan []byte
+	HandleMessage func(message []byte)
 }
 
-func NewClient(conn *websocket.Conn, room *Room) *Client {
+func NewClient(conn *websocket.Conn) *Client {
 	return &Client{
-		conn: conn,
-		room: room,
-		send: make(chan []byte, writeBufferSize),
+		conn:          conn,
+		Rooms:         make(map[string]*Room),
+		send:          make(chan []byte, 256),
+		HandleMessage: func(message []byte) {},
 	}
 }
+
 func (c *Client) ReadPump() {
 	defer func() {
-		c.room.Leave(c)
+		for _, room := range c.Rooms {
+			room.Leave(c)
+		}
 		c.conn.Close()
 	}()
 
@@ -37,8 +42,7 @@ func (c *Client) ReadPump() {
 			}
 			break
 		}
-		log.Printf("Received message from client in room %s: %s", c.room.ID, string(message))
-		c.room.Broadcast(message)
+		c.HandleMessage(message)
 	}
 }
 
@@ -64,7 +68,6 @@ func (c *Client) WritePump() {
 			if err := w.Close(); err != nil {
 				return
 			}
-			log.Printf("Sent message to client in room %s: %s", c.room.ID, string(message))
 		}
 	}
 }
