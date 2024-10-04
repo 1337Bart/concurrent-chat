@@ -6,19 +6,15 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-const (
-	writeBufferSize = 256
-)
-
-type Client struct {
+type Connection struct {
 	conn          *websocket.Conn
 	Rooms         map[string]*Room
 	send          chan []byte
 	HandleMessage func(message []byte)
 }
 
-func NewClient(conn *websocket.Conn) *Client {
-	return &Client{
+func NewConnection(conn *websocket.Conn) *Connection {
+	return &Connection{
 		conn:          conn,
 		Rooms:         make(map[string]*Room),
 		send:          make(chan []byte, 256),
@@ -26,11 +22,9 @@ func NewClient(conn *websocket.Conn) *Client {
 	}
 }
 
-func (c *Client) ReadPump() {
+func (c *Connection) ReadPump(onClose func()) {
 	defer func() {
-		for _, room := range c.Rooms {
-			room.Leave(c)
-		}
+		onClose()
 		c.conn.Close()
 	}()
 
@@ -46,7 +40,7 @@ func (c *Client) ReadPump() {
 	}
 }
 
-func (c *Client) WritePump() {
+func (c *Connection) WritePump() {
 	defer func() {
 		c.conn.Close()
 	}()
