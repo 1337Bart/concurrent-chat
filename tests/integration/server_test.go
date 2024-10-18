@@ -14,17 +14,14 @@ func TestListRooms(t *testing.T) {
 	cfg := &config.Config{Address: ":8080"}
 	s := server.NewServer(cfg)
 
-	// Create a test server
 	ts := httptest.NewServer(s.Router())
 	defer ts.Close()
 
-	// Create a room first
 	_, err := http.Post(ts.URL+"/room/testroom", "", nil)
 	if err != nil {
 		t.Fatalf("Failed to create room: %v", err)
 	}
 
-	// Test listing rooms
 	resp, err := http.Get(ts.URL + "/rooms")
 	if err != nil {
 		t.Fatalf("Failed to get rooms: %v", err)

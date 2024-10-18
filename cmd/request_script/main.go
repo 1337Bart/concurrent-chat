@@ -42,7 +42,6 @@ func main() {
 	var wg sync.WaitGroup
 	done := make(chan struct{})
 
-	// Set up signal handling
 	signalChan := make(chan os.Signal, 1)
 	signal.Notify(signalChan, syscall.SIGINT, syscall.SIGTERM)
 
@@ -51,7 +50,6 @@ func main() {
 		go runChat(i, &wg, done)
 	}
 
-	// Wait for duration or signal
 	select {
 	case <-time.After(*duration):
 		log.Println("Simulation duration reached")
@@ -59,8 +57,8 @@ func main() {
 		log.Printf("Received signal: %v", sig)
 	}
 
-	close(done) // Signal all chats to stop
-	wg.Wait()   // Wait for all chats to finish
+	close(done)
+	wg.Wait()
 
 	printFinalStats(time.Since(startTime))
 }
